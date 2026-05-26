@@ -1,0 +1,72 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "./MedControl.sol";
+
+contract MedSale is MedControl {
+
+    struct SaleRecord {
+        uint256 tokenId;
+        address pharmacy;
+        address consumer;
+        uint256 timestamp;
+        bool dispensed;
+    }
+
+    mapping(uint256 => SaleRecord) public saleRecords;
+
+    event ProductDispensed(uint256 indexed tokenId, address indexed pharmacy, address indexed consumer);
+    event ProductVerified(uint256 indexed tokenId, address verifiedBy, string status);
+
+    function dispense(uint256 tokenId, address consumer) public onlyRole(PHARMACY_ROLE) {
+        require(ownerOf(tokenId) == msg.sender, "Pharmacy does not own this batch");
+        require(
+            keccak256(bytes(batches[tokenId].status)) == keccak256(bytes("active")),
+            "Batch is not active"
+        );
+        require(!saleRecords[tokenId].dispensed, "Batch already dispensed");
+
+        saleRecords[tokenId] = SaleRecord({
+            tokenId: tokenId,
+            pharmacy: msg.sender,
+            consumer: consumer,
+            timestamp: block.timestamp,
+            dispensed: true
+        });
+
+        emit ProductDispensed(tokenId, msg.sender, consumer);
+    }
+
+    function verifyProduct(uint256 tokenId) public view returns (string memory) {
+        Batch memory batch = batches[tokenId];
+
+        string memory result;
+
+        if (keccak256(bytes(batch.status)) == keccak256(bytes("active"))) {
+            result = "VERIFIED: Batch is authentic and active";
+        } else if (keccak256(bytes(batch.status)) == keccak256(bytes("non-compliant"))) {
+            result = "WARNING: Batch is non-compliant";
+        } else if (keccak256(bytes(batch.status)) == keccak256(bytes("expired"))) {
+            result = "WARNING: Batch is expired";
+        } else {
+            result = "UNKNOWN: Status unrecognised";
+        }
+
+        return result;
+    }
+
+    function getSaleRecord(uint256 tokenId) public view returns (SaleRecord memory) {
+        return saleRecords[tokenId];
+    }
+
+    function getBatchSummary(uint256 tokenId) public view returns (
+        string memory medicineName,
+        string memory status,
+        address currentOwner,
+        bool dispensed
+    ) {
+        Batch memory batch = batches[tokenId];
+        SaleRecord memory sale = saleRecords[tokenId];
+        return (batch.medicineName, batch.status, batch.currentOwner, sale.dispensed);
+    }
+}
