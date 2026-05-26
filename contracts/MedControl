@@ -1,0 +1,97 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+import "./MedRegistry.sol";
+
+contract MedControl is MedRegistry {
+
+    bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
+    bytes32 public constant PHARMACY_ROLE = keccak256("PHARMACY_ROLE");
+    bytes32 public constant COMPLIANCE_ROLE = keccak256("COMPLIANCE_ROLE");
+
+    struct ConditionLog {
+        uint256 timestamp;
+        string temperature;
+        string humidity;
+        string location;
+        address loggedBy;
+    }
+
+    struct TransferLog {
+        uint256 timestamp;
+        address from;
+        address to;
+        string role;
+    }
+
+    mapping(uint256 => ConditionLog[]) public conditionLogs;
+    mapping(uint256 => TransferLog[]) public transferLogs;
+
+    event CustodyTransferred(uint256 indexed tokenId, address indexed from, address indexed to);
+    event ConditionLogged(uint256 indexed tokenId, string temperature, string humidity);
+    event StatusUpdated(uint256 indexed tokenId, string newStatus);
+
+    function transferCustody(uint256 tokenId, address to, string memory role) public {
+        require(
+            hasRole(MANUFACTURER_ROLE, msg.sender) ||
+            hasRole(DISTRIBUTOR_ROLE, msg.sender) ||
+            hasRole(PHARMACY_ROLE, msg.sender),
+            "Not authorised to transfer"
+        );
+        require(ownerOf(tokenId) == msg.sender, "You do not own this batch");
+
+        transferLogs[tokenId].push(TransferLog({
+            timestamp: block.timestamp,
+            from: msg.sender,
+            to: to,
+            role: role
+        }));
+
+        _transfer(msg.sender, to, tokenId);
+        batches[tokenId].currentOwner = to;
+
+        emit CustodyTransferred(tokenId, msg.sender, to);
+    }
+
+    function logCondition(
+        uint256 tokenId,
+        string memory temperature,
+        string memory humidity,
+        string memory location
+    ) public onlyRole(DISTRIBUTOR_ROLE) {
+        conditionLogs[tokenId].push(ConditionLog({
+            timestamp: block.timestamp,
+            temperature: temperature,
+            humidity: humidity,
+            location: location,
+            loggedBy: msg.sender
+        }));
+
+        emit ConditionLogged(tokenId, temperature, humidity);
+    }
+
+    function updateStatus(uint256 tokenId, string memory newStatus) public onlyRole(COMPLIANCE_ROLE) {
+        batches[tokenId].status = newStatus;
+        emit StatusUpdated(tokenId, newStatus);
+    }
+
+    function getConditionLogs(uint256 tokenId) public view returns (ConditionLog[] memory) {
+        return conditionLogs[tokenId];
+    }
+
+    function getTransferLogs(uint256 tokenId) public view returns (TransferLog[] memory) {
+        return transferLogs[tokenId];
+    }
+
+    function addDistributor(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(DISTRIBUTOR_ROLE, account);
+    }
+
+    function addPharmacy(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(PHARMACY_ROLE, account);
+    }
+
+    function addCompliance(address account) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        grantRole(COMPLIANCE_ROLE, account);
+    }
+}
